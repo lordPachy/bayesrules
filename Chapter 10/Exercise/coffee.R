@@ -1,25 +1,62 @@
 # Load packages
 library(bayesrules)
 library(tidyverse)
-library(bayesplot)
+library(rstan)
 library(rstanarm)
+library(bayesplot)
+library(tidybayes)
+library(janitor)
+library(broom.mixed)
 
-ggplot(bikes, aes(y = rides, x = temp_feel)) + 
-  geom_point(size = 0.2) + 
-  geom_smooth(method = "lm", se = FALSE)
+# Importing data
+data("coffee_ratings")
+coffee_ratings <- coffee_ratings %>% 
+  select(farm_name, total_cup_points, aroma, aftertaste)
 
-bike_model <- stan_glm(rides ~ temp_feel, data = bikes,
+# There are multiple observations for each variable, thus
+# the observations are not independent
+head(coffee_ratings)
+summarise(coffee_ratings)
+coffee_ratings
+
+# We can just pick an observation per variable
+set.seed(84735)
+new_coffee <- coffee_ratings %>% 
+  group_by(farm_name) %>% 
+  sample_n(1) %>% 
+  ungroup()
+dim(new_coffee)
+
+# Simulation
+coffee_model <- stan_glm(total_cup_points ~ aroma, data = new_coffee,
                        family = gaussian,
-                       prior_intercept = normal(5000, 1000),
-                       prior = normal(100, 40), 
-                       prior_aux = exponential(0.0008),
+                       prior_intercept = normal(75, 10^2),
                        chains = 4, iter = 5000*2, seed = 84735)
 
+# Simulation diagnostics
+neff_ratio(coffee_model)
+rhat(coffee_model)
+
+mcmc_trace(coffee_model, size = 0.1)
+mcmc_dens_overlay(coffee_model)
+
+# Plotting simulation lines and generated datasets
+# We can pick 50 of the simulated lines and plot them out
+new_coffee %>% add_fitted_draws(coffee_model, n = 50) %>% ggplot(aes(x = aroma, y = total_cup_points)) + geom_line(aes(y = .value, group = .draw), alpha = 0.15) + geom_point(data =new_coffee, size = 0.05)
+
+# We can pick 50 of the simulated lines and plot them out
+new_coffee %>% add_predicted_draws(coffee_model, n = 4) %>% ggplot(aes(x = aroma, y = total_cup_points)) + geom_point(aes(y = .prediction, group = .draw), size = 0.15) + facet_wrap(~.draw)
+
+# Plotting the distribution of beta 1
+ggplot(data = coffee_model, aes(x = ))
+coffee_model$aroma
 
 # Posterior predictive check
-bike_model_df = as.data.frame(bike_model)
-first_set = head(bike_model_df, 1)
-first_set
+coffee_model_df = as.data.frame(coffee_model)
+ggplot(coffee_model_df, aes(x = aroma)) + geom_density() +
+  geom_vline(xintercept = median(coffee_model_df$aroma))
+first_set = head(coffee_model_df, 1)
+posterior_interval(coffee_model, prob = 0.95)
 
 beta_0 <- first_set$`(Intercept)`
 beta_1 <- first_set$temp_feel
@@ -36,7 +73,7 @@ head(one_simulation, 2)
 ggplot(one_simulation, aes(x = simulated_rides)) + 
   geom_density(color = 'lightblue') +   geom_density(aes(x = rides), color = 'darkblue')
 
-# This has been done for one of the 20000 retrieved lines. We can pick 50 points for each of the retrieved lines and look at the result
+s# This has been done for one of the 20000 retrieved lines. We can pick 50 points for each of the retrieved lines and look at the result
 pp_check(bike_model, nreps = 50) + xlab("rides")
 
 # Point-wise prediction discussion
